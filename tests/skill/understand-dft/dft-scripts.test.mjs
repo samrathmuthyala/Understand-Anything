@@ -128,6 +128,35 @@ describe('dft-assemble.mjs', () => {
     expect(rep.inferred).toContain('concept:mbist-ctrl');
   });
 
+  it('mirrors the Tessent tsdb_outdir folder hierarchy as folder nodes and contains edges', () => {
+    writeStage('1', {
+      stageName: '1. MBIST',
+      nodes: [
+        { id: 'file:tsdb_outdir/instruments/core_rtl1_mbist.instrument/core_rtl1_mbist.icl', type: 'file', name: 'x.icl', filePath: 'tsdb_outdir/instruments/core_rtl1_mbist.instrument/core_rtl1_mbist.icl', summary: 's', tags: ['icl'] },
+        { id: 'file:tsdb_outdir/dft_inserted_designs/core_rtl1.dft_spec', type: 'file', name: 'spec', filePath: 'tsdb_outdir/dft_inserted_designs/core_rtl1.dft_spec', summary: 's', tags: ['spec'] },
+      ],
+      edges: [],
+    });
+    const r = run(ASSEMBLE, [root]);
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    const g = JSON.parse(readFileSync(join(root, '.ua/knowledge-graph.json'), 'utf8'));
+    const L = 'layer:stage-1';
+    const id = (p) => `folder:${L}:${p}`;
+    const has = (s, t) => g.edges.some((e) => e.source === s && e.target === t && e.type === 'contains');
+    expect(has(id('tsdb_outdir'), id('tsdb_outdir/instruments'))).toBe(true);
+    expect(has(id('tsdb_outdir/instruments'), id('tsdb_outdir/instruments/core_rtl1_mbist.instrument'))).toBe(true);
+    expect(has(id('tsdb_outdir/instruments/core_rtl1_mbist.instrument'), 'file:tsdb_outdir/instruments/core_rtl1_mbist.instrument/core_rtl1_mbist.icl')).toBe(true);
+    expect(has(id('tsdb_outdir/dft_inserted_designs'), 'file:tsdb_outdir/dft_inserted_designs/core_rtl1.dft_spec')).toBe(true);
+    const folder = g.nodes.find((n) => n.id === id('tsdb_outdir/instruments/core_rtl1_mbist.instrument'));
+    expect(folder.tags).toContain('tsdb-folder');
+    expect(folder.summary).toMatch(/MBIST/);
+    // folders live in the same (single) layer as their files
+    const layer = g.layers.find((l) => l.id === L);
+    expect(layer.nodeIds).toContain(id('tsdb_outdir'));
+    const all = g.layers.flatMap((l) => l.nodeIds);
+    expect(new Set(all).size).toBe(all.length);
+  });
+
   it('keeps the previous graph as knowledge-graph.prev.json on re-run', () => {
     const r = run(ASSEMBLE, [root]);
     expect(r.status).toBe(0);

@@ -29,6 +29,7 @@
 import { readdirSync, readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { addTsdbStructure } from './tsdb-structure.mjs';
 
 const argv = process.argv.slice(2);
 const pos = [];
@@ -136,6 +137,14 @@ const layers = stages.map((st) => ({
   nodeIds: [...nodesById.keys()].filter((id) => layerOf.get(id) === st.id),
 })).filter((l) => l.nodeIds.length > 0);
 
+// make the Tessent TSDB folder hierarchy visible (tsdb_outdir/<category>/<object>/...) as module nodes + contains edges
+{
+  const tmp = { nodes: [...nodesById.values()], edges: finalEdges, layers };
+  const { added } = addTsdbStructure(tmp);
+  for (const n of tmp.nodes) if (!nodesById.has(n.id)) nodesById.set(n.id, n);
+  report.tsdbFolders = added.folders;
+}
+
 // tour: hierarchy first, then one step per stage
 const tour = [];
 let order = 1;
@@ -145,7 +154,7 @@ for (const st of stages) {
   let ids = (st.tourNodeIds || []).filter((id) => nodesById.has(id));
   if (ids.length === 0) {
     const files = layer.nodeIds.filter((id) => nodesById.get(id).type === 'file').slice(0, 3);
-    const concepts = layer.nodeIds.filter((id) => nodesById.get(id).type !== 'file' && !(nodesById.get(id).tags || []).includes('command-step')).slice(0, 6);
+    const concepts = layer.nodeIds.filter((id) => nodesById.get(id).type !== 'file' && !(nodesById.get(id).tags || []).some((t) => t === 'command-step' || t === 'tsdb-folder')).slice(0, 6);
     ids = [...files, ...concepts];
   }
   tour.push({ order: order++, title: st.name, description: st.summary || st.name, nodeIds: ids });
@@ -194,7 +203,7 @@ const types = {};
 for (const n of nodesById.values()) types[n.type] = (types[n.type] || 0) + 1;
 console.log(`dft-assemble: ${issues.length ? 'FAILED (graph not written)' : 'ok'}  nodes=${nodesById.size} edges=${finalEdges.length} layers=${layers.length} tour=${tour.length}`);
 console.log('  node types: ' + JSON.stringify(types));
-console.log(`  inferred nodes: ${report.inferred.length}   partial reads: ${report.partialReads.length}   dropped edges: ${report.droppedEdges.length}   converted functions: ${report.convertedFunctions}`);
+console.log(`  inferred nodes: ${report.inferred.length}   partial reads: ${report.partialReads.length}   dropped edges: ${report.droppedEdges.length}   converted functions: ${report.convertedFunctions}   tsdb folder nodes: ${report.tsdbFolders ?? 0}`);
 for (const w of report.warnings.slice(0, 10)) console.log('  warning: ' + w);
 for (const i of issues.slice(0, 10)) console.log('  ISSUE: ' + i);
 process.exit(issues.length ? 1 : 0);
